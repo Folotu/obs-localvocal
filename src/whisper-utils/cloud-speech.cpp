@@ -112,41 +112,31 @@ public:
 
 // Initialize AWS SDK safely - call this once during plugin startup
 extern "C" bool initialize_aws_sdk_once() {
-	// Fast path: already initialized
-	int expected = 2;
-	if (g_aws_init_state.load(std::memory_order_acquire) == expected) {
+	// Fast path: already initialized or failed
+	int state = g_aws_init_state.load(std::memory_order_acquire);
+	if (state == 2) {
 		return true;
 	}
-	
-	// Fast path: already failed
-	expected = -1;
-	if (g_aws_init_state.load(std::memory_order_acquire) == expected) {
+	if (state == -1) {
 		return false;
 	}
-	
-	// Try to acquire initialization lock
-	std::lock_guard<std::mutex> lock(g_aws_init_mutex);
-	
-	// Double-check after acquiring lock
-	int current_state = g_aws_init_state.load(std::memory_order_acquire);
-	if (current_state == 2) {
-		return true; // Already initialized
-	}
-	if (current_state == -1) {
-		return false; // Previously failed
-	}
-	if (current_state == 1) {
-		// Another thread is initializing, wait for it
-		while (g_aws_init_state.load(std::memory_order_acquire) == 1) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+	// Try to become the initializing thread
+	int expected = 0;
+	if (!g_aws_init_state.compare_exchange_strong(expected, 1, std::memory_order_acq_rel)) {
+		// Another thread is initializing or has finished initialization.
+		for (;;) {
+			state = g_aws_init_state.load(std::memory_order_acquire);
+			if (state == 1) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				continue;
+			}
+			return state == 2;
 		}
-		return g_aws_init_state.load(std::memory_order_acquire) == 2;
 	}
-	
-	// Mark as initializing
-	g_aws_init_state.store(1, std::memory_order_release);
-	
+
 	try {
+		std::lock_guard<std::mutex> lock(g_aws_init_mutex);
 		blog(LOG_INFO, "Initializing AWS SDK...");
 		
 		// Set environment variables to disable problematic features
@@ -276,6 +266,7 @@ CloudSpeechProcessor::~CloudSpeechProcessor() {
 	}
 #endif
 	if (curl_global_acquired_) {
+		// Balanced with acquire_curl_global(); performs curl_global_cleanup when refcount hits 0.
 		release_curl_global();
 		curl_global_acquired_ = false;
 	}
@@ -732,7 +723,6 @@ std::string CloudSpeechProcessor::transcribeWithAmazonTranscribeREST(const float
 		}
 		
 		// For now, return a placeholder response
-		// TODO: Implement proper AWS REST API with signature v4
 		blog(LOG_INFO, "Amazon Transcribe REST API fallback - not fully implemented yet");
 		blog(LOG_INFO, "Audio converted to base64, length: %zu", audio_base64.length());
 		
@@ -1222,6 +1212,10 @@ std::string CloudSpeechProcessor::transcribeWithCustom(const float *audio_data, 
 // Utility functions
 std::string CloudSpeechProcessor::convertAudioToBase64(const float *audio_data, size_t frames, uint32_t sample_rate) {
 	try {
+		if (!audio_data || frames == 0 || sample_rate == 0) {
+			return "";
+		}
+
 		// Convert float audio to 16-bit PCM
 		std::vector<int16_t> pcm_data(frames);
 		for (size_t i = 0; i < frames; i++) {

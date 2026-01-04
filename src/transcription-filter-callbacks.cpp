@@ -274,7 +274,6 @@ void send_caption_to_stream(DetectionResultWithText result, const std::string &s
 		obs_log(gf->log_level,
 			"Sending caption to streaming output: %s (raw duration %.3f, effective duration %.3f)",
 			str_copy.c_str(), duration, effective_duration);
-		// TODO: find out why setting short duration does not work
 		obs_output_output_caption_text2(streaming_output, str_copy.c_str(),
 						effective_duration);
 		obs_output_release(streaming_output);
@@ -373,7 +372,7 @@ void output_text(struct transcription_filter_data *gf, const DetectionResultWith
 
 		if (gf->caption_to_stream && translation_type == NO_TRANSLATION &&
 		    result.result == DETECTION_RESULT_SPEECH) {
-			// TODO: add support for partial transcriptions
+			// Stream captions: finals only to avoid flicker/duplication.
 			if (output_source == gf->text_source_name) {
 				obs_log(LOG_DEBUG, "-- stream captions output -- %s", text.c_str());
 				send_caption_to_stream(result, text, gf);

@@ -258,16 +258,18 @@ The build should exist in the `./release` folder off the root. You can manually 
 
 #### AWS Transcribe (optional)
 
-AWS Transcribe streaming support is optional and requires an AWS SDK for C++ install that includes `transcribestreaming` and uses a cURL-based HTTP client (needed for streaming on Windows). Configure CMake with either:
+AWS Transcribe streaming support is optional. The plugin builds with `ENABLE_AWS_TRANSCRIBE=ON` by default, but AWS Transcribe streaming is only enabled at runtime when an AWS SDK for C++ install is found that includes `transcribestreaming` and uses a cURL-based HTTP client (needed for streaming on Windows). Configure CMake with either:
 
 * `-DAWS_SDK_ROOT=C:\path\to\aws-sdk-install-prefix` (contains `include/` and `lib/cmake/`), or
 * `-DAWSSDK_DIR=C:\path\to\aws-sdk-install-prefix\lib\cmake\AWSSDK`
 
-If you already have the pre-built OBS dependency bundle downloaded (the build scripts fetch it into `.deps/`), you can also have the Windows build script build the AWS SDK for you:
+On Windows, if you already have the pre-built OBS dependency bundle downloaded (the build scripts fetch it into `.deps/`), the Windows build script will attempt to build the AWS SDK for you (into `aws-sdk-built-curl/`) by default. You can also force it explicitly:
 
 ```powershell
 > .github/scripts/Build-Windows.ps1 -Configuration Release -BuildAwsSdk
 ```
+
+To skip the AWS SDK build attempt, pass `-BuildAwsSdk:$false` or disable AWS Transcribe at configure time with `-ExtraCmakeArgs '-DENABLE_AWS_TRANSCRIBE=OFF'`.
 
 If you bundle a CA file as `roots.pem` alongside the plugin, it will be used; otherwise the system trust store is used.
 
